@@ -1,4 +1,4 @@
-name: Universal ZIP Preparer
+name: Universal Repository Extractor
 
 on:
   workflow_dispatch:
@@ -10,7 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  unzip:
+  extractor:
+
     runs-on: ubuntu-latest
 
     steps:
@@ -20,19 +21,8 @@ jobs:
         with:
           fetch-depth: 0
 
-- name: Debug Extracted Files
-  run: |
-    echo "=== ZIP FILES ==="
-    find . -name "*.zip"
 
-    echo "=== ALL FILES ==="
-    find . -maxdepth 3 -type f | head -100
-
-    echo "=== GIT STATUS ==="
-    git status --short
-    
-
-      - name: Install Archive Tools
+      - name: Install Extraction Tools
         continue-on-error: true
         run: |
           sudo apt-get update -y || true
@@ -46,67 +36,112 @@ jobs:
             rsync || true
 
 
-      - name: Create Extraction Folder
+      - name: Show Environment
+        continue-on-error: true
+        run: |
+          echo "Node:"
+          node -v || true
+
+          echo "Python:"
+          python3 --version || true
+
+          echo "Git:"
+          git --version || true
+
+          echo "Current folder:"
+          pwd
+
+          ls -la
+
+
+      - name: Create Working Folder
         run: |
           mkdir -p extracted
 
 
-      - name: Extract ZIP Files
+      - name: Find And Extract ZIP Files
         continue-on-error: true
         run: |
-          find . -type f -iname "*.zip" | while read file
+          FOUND=0
+
+          while IFS= read -r file
           do
-            echo "Extracting $file"
+            FOUND=1
+            echo "Extracting ZIP: $file"
 
             unzip -o "$file" -d extracted || true
-          done
+
+          done < <(find . -type f -iname "*.zip" ! -path "./extracted/*")
+
+          if [ "$FOUND" = "0" ]; then
+            echo "No ZIP files found"
+          fi
 
 
-      - name: Extract Other Archives
+      - name: Extract 7z Files
         continue-on-error: true
         run: |
-
-          find . -type f -iname "*.7z" | while read file
+          find . -type f -iname "*.7z" ! -path "./extracted/*" | while read file
           do
-            echo "Extracting $file"
+            echo "Extracting 7z: $file"
             7z x "$file" -oextracted || true
           done
 
 
-          find . -type f -iname "*.tar.gz" | while read file
+      - name: Extract Tar Files
+        continue-on-error: true
+        run: |
+          find . -type f -iname "*.tar.gz" ! -path "./extracted/*" | while read file
           do
-            echo "Extracting $file"
+            echo "Extracting tar: $file"
             tar -xzf "$file" -C extracted || true
           done
 
 
-      - name: Move Extracted Files Into Repository
+      - name: Copy Extracted Files Into Repo
         continue-on-error: true
         run: |
-          rsync -av extracted/ ./ || true
+          echo "Copying extracted files..."
+
+          rsync -av \
+          --exclude=".git" \
+          extracted/ ./ || true
 
 
-      - name: Remove Empty Extraction Folder
+      - name: Remove Temporary Folder
         continue-on-error: true
         run: |
           rm -rf extracted || true
 
 
-      - name: Commit Extracted Files
+      - name: Debug Files
         continue-on-error: true
         run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
+          echo "Repository files:"
+          find . -maxdepth 3 -type f | head -200
 
-          git add .
+          echo "Git status:"
+          git status --short
 
-          git commit -m "Auto extract archive files" || true
 
-          git push || true
+      - name: Commit And Push Changes
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add -A
+
+          git status
+
+          git commit -m "Auto extract archive files" || echo "Nothing new to commit"
+
+          git push origin main || echo "Push skipped"
 
 
       - name: Completed
         run: |
-          echo "Archive extraction completed."
-          echo "Extracted files were saved into the repository."
-          echo "Unsupported files were skipped."
+          echo "================================="
+          echo "Extraction completed"
+          echo "Files saved to repository if changes existed"
+          echo "================================="

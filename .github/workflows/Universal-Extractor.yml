@@ -1,0 +1,147 @@
+name: Universal Repository Extractor
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  extractor:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+
+      - name: Install Extraction Tools
+        continue-on-error: true
+        run: |
+          sudo apt-get update -y || true
+          sudo apt-get install -y \
+            unzip \
+            zip \
+            p7zip-full \
+            tar \
+            gzip \
+            xz-utils \
+            rsync || true
+
+
+      - name: Show Environment
+        continue-on-error: true
+        run: |
+          echo "Node:"
+          node -v || true
+
+          echo "Python:"
+          python3 --version || true
+
+          echo "Git:"
+          git --version || true
+
+          echo "Current folder:"
+          pwd
+
+          ls -la
+
+
+      - name: Create Working Folder
+        run: |
+          mkdir -p extracted
+
+
+      - name: Find And Extract ZIP Files
+        continue-on-error: true
+        run: |
+          FOUND=0
+
+          while IFS= read -r file
+          do
+            FOUND=1
+            echo "Extracting ZIP: $file"
+
+            unzip -o "$file" -d extracted || true
+
+          done < <(find . -type f -iname "*.zip" ! -path "./extracted/*")
+
+          if [ "$FOUND" = "0" ]; then
+            echo "No ZIP files found"
+          fi
+
+
+      - name: Extract 7z Files
+        continue-on-error: true
+        run: |
+          find . -type f -iname "*.7z" ! -path "./extracted/*" | while read file
+          do
+            echo "Extracting 7z: $file"
+            7z x "$file" -oextracted || true
+          done
+
+
+      - name: Extract Tar Files
+        continue-on-error: true
+        run: |
+          find . -type f -iname "*.tar.gz" ! -path "./extracted/*" | while read file
+          do
+            echo "Extracting tar: $file"
+            tar -xzf "$file" -C extracted || true
+          done
+
+
+      - name: Copy Extracted Files Into Repo
+        continue-on-error: true
+        run: |
+          echo "Copying extracted files..."
+
+          rsync -av \
+          --exclude=".git" \
+          extracted/ ./ || true
+
+
+      - name: Remove Temporary Folder
+        continue-on-error: true
+        run: |
+          rm -rf extracted || true
+
+
+      - name: Debug Files
+        continue-on-error: true
+        run: |
+          echo "Repository files:"
+          find . -maxdepth 3 -type f | head -200
+
+          echo "Git status:"
+          git status --short
+
+
+      - name: Commit And Push Changes
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add -A
+
+          git status
+
+          git commit -m "Auto extract archive files" || echo "Nothing new to commit"
+
+          git push origin main || echo "Push skipped"
+
+
+      - name: Completed
+        run: |
+          echo "================================="
+          echo "Extraction completed"
+          echo "Files saved to repository if changes existed"
+          echo "================================="

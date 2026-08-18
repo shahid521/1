@@ -20,6 +20,17 @@ jobs:
         with:
           fetch-depth: 0
 
+- name: Debug Extracted Files
+  run: |
+    echo "=== ZIP FILES ==="
+    find . -name "*.zip"
+
+    echo "=== ALL FILES ==="
+    find . -maxdepth 3 -type f | head -100
+
+    echo "=== GIT STATUS ==="
+    git status --short
+    
 
       - name: Install Archive Tools
         continue-on-error: true
